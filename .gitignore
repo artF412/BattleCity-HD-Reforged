@@ -3,3 +3,4 @@ dist/
 .vite/
 .claude/
 *.local
+PRD.md
