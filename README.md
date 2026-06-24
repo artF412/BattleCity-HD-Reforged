@@ -3,7 +3,7 @@
 > Faithful remake of the Famicom classic, redrawn from scratch in modern HD vector art.
 > No pixel art. No image files. Every tank, brick, and explosion is drawn in code.
 
-**[Play now →](https://artf412.github.io/battle_city_hd_reforged/)**  _(deploy to any static host)_
+**[Play now →](https://dapper-melomakarona-97cf6c.nenetlifytlify.app/)**
 
 ---
 
