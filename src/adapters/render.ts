@@ -9,9 +9,7 @@ import type { GameState, Tank, GameEvent, Direction, PowerUpKind } from '../core
 
 const PAD = 8;
 const HUD_W = 64;
-const DESIGN_W = PAD + FIELD + PAD + HUD_W + PAD; // 296
-const DESIGN_H = PAD + FIELD + PAD; // 224
-const FX = PAD, FY = PAD; // field origin in design space
+const HUD_STRIP = 32; // portrait: horizontal HUD bar height
 
 const TANK_COLOR: Record<string, string> = {
   player: '#e8c84a',
@@ -28,6 +26,11 @@ export class Renderer {
   private particles: Particle[] = [];
   private shake = 0;
   private time = 0;
+  private portrait = false;
+  private dw = PAD + FIELD + PAD + HUD_W + PAD; // 296 landscape default
+  private dh = PAD + FIELD + PAD;               // 224 landscape default
+  private fx = PAD;
+  private fy = PAD;
 
   constructor(public canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
@@ -37,13 +40,41 @@ export class Renderer {
 
   resize(): void {
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-    const s = Math.min(window.innerWidth / DESIGN_W, window.innerHeight / DESIGN_H);
-    this.canvas.width = Math.floor(DESIGN_W * s * dpr);
-    this.canvas.height = Math.floor(DESIGN_H * s * dpr);
-    this.canvas.style.width = `${DESIGN_W * s}px`;
-    this.canvas.style.height = `${DESIGN_H * s}px`;
+    this.portrait = window.innerHeight > window.innerWidth;
+    if (this.portrait) {
+      this.dw = PAD + FIELD + PAD;             // 224
+      this.dh = HUD_STRIP + PAD + FIELD + PAD; // 256
+      this.fx = PAD;
+      this.fy = HUD_STRIP + PAD;               // 40
+    } else {
+      this.dw = PAD + FIELD + PAD + HUD_W + PAD; // 296
+      this.dh = PAD + FIELD + PAD;               // 224
+      this.fx = PAD;
+      this.fy = PAD;
+    }
+    // Reserve space so fixed-position touch controls don't overlap the canvas.
+    // Portrait: strip at bottom (196 px). Landscape: d-pad left (186 px), fire right (120 px).
+    const touch = 'ontouchstart' in window;
+    const ctrlReserveH = this.portrait && touch ? 196 : 0;
+    const ctrlReserveL = !this.portrait && touch ? 186 : 0;
+    const ctrlReserveR = !this.portrait && touch ? 120 : 0;
+    const s = Math.min(
+      (window.innerWidth  - ctrlReserveL - ctrlReserveR) / this.dw,
+      (window.innerHeight - ctrlReserveH) / this.dh,
+    );
+    this.canvas.width = Math.floor(this.dw * s * dpr);
+    this.canvas.height = Math.floor(this.dh * s * dpr);
+    this.canvas.style.width = `${this.dw * s}px`;
+    this.canvas.style.height = `${this.dh * s}px`;
     this.ctx.setTransform(s * dpr, 0, 0, s * dpr, 0, 0);
     this.ctx.imageSmoothingEnabled = true;
+    const appEl = typeof document !== 'undefined' && document.getElementById
+      ? document.getElementById('app') : null;
+    if (appEl) {
+      appEl.style.paddingBottom = ctrlReserveH ? `${ctrlReserveH}px` : '0';
+      appEl.style.paddingLeft   = ctrlReserveL ? `${ctrlReserveL}px` : '0';
+      appEl.style.paddingRight  = ctrlReserveR ? `${ctrlReserveR}px` : '0';
+    }
   }
 
   consumeEvents(events: GameEvent[]): void {
@@ -53,7 +84,7 @@ export class Renderer {
       else if (e.t === 'explodeBig') { this.burst(e.x, e.y, 26, '#ff8a3c', 2.4); this.burst(e.x, e.y, 14, '#fff2c2', 1.6); }
       else if (e.t === 'brickHit') this.burst(e.x, e.y, 6, '#c2745a', 1);
       else if (e.t === 'steelHit') this.burst(e.x, e.y, 6, '#cfd6de', 1);
-      else if (e.t === 'baseDestroyed') this.burst(96 + FX, 192 + FY, 40, '#ff5a3c', 3);
+      else if (e.t === 'baseDestroyed') this.burst(BASE_TILE.tx * TILE + TILE / 2, BASE_TILE.ty * TILE + TILE / 2, 40, '#ff5a3c', 3);
       else if (e.t === 'powerupSpawn') this.burst(e.x, e.y, 12, '#7fe3ff', 1.4);
     }
   }
@@ -63,7 +94,7 @@ export class Renderer {
       const a = (Math.PI * 2 * i) / n + Math.random();
       const sp = (0.4 + Math.random() * 1.6) * power;
       this.particles.push({
-        x: x + FX, y: y + FY, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        x: x + this.fx, y: y + this.fy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
         life: 1, max: 1, color, size: 1 + Math.random() * 2 * power,
       });
     }
@@ -101,17 +132,17 @@ export class Renderer {
   private drawBackground(): void {
     const ctx = this.ctx;
     ctx.fillStyle = '#05060a';
-    ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    ctx.fillRect(0, 0, this.dw, this.dh);
     // field plate
     ctx.fillStyle = '#0c0f16';
-    ctx.fillRect(FX, FY, FIELD, FIELD);
+    ctx.fillRect(this.fx, this.fy, FIELD, FIELD);
     // faint grid
     ctx.strokeStyle = 'rgba(90,120,160,0.06)';
     ctx.lineWidth = 0.5;
     ctx.beginPath();
     for (let i = 0; i <= FIELD; i += TILE) {
-      ctx.moveTo(FX + i, FY); ctx.lineTo(FX + i, FY + FIELD);
-      ctx.moveTo(FX, FY + i); ctx.lineTo(FX + FIELD, FY + i);
+      ctx.moveTo(this.fx + i, this.fy); ctx.lineTo(this.fx + i, this.fy + FIELD);
+      ctx.moveTo(this.fx, this.fy + i); ctx.lineTo(this.fx + FIELD, this.fy + i);
     }
     ctx.stroke();
   }
@@ -121,7 +152,7 @@ export class Renderer {
       for (let cx = 0; cx < GRID; cx++) {
         const m = state.terrain[cy * GRID + cx];
         if (!mats.includes(m)) continue;
-        const x = FX + cx * CELL, y = FY + cy * CELL;
+        const x = this.fx + cx * CELL, y = this.fy + cy * CELL;
         if (m === MAT.BRICK) this.drawBrick(x, y);
         else if (m === MAT.STEEL) this.drawSteel(x, y);
         else if (m === MAT.WATER) this.drawWater(x, y, cx, cy);
@@ -194,7 +225,7 @@ export class Renderer {
 
   private drawBase(state: GameState): void {
     const ctx = this.ctx;
-    const x = FX + BASE_TILE.tx * TILE, y = FY + BASE_TILE.ty * TILE;
+    const x = this.fx + BASE_TILE.tx * TILE, y = this.fy + BASE_TILE.ty * TILE;
     if (!state.baseAlive) {
       ctx.fillStyle = '#2a2a2e';
       ctx.fillRect(x + 2, y + 4, TILE - 4, TILE - 6);
@@ -220,7 +251,7 @@ export class Renderer {
 
   private drawTank(t: Tank): void {
     const ctx = this.ctx;
-    const cx = FX + t.x + TILE / 2, cy = FY + t.y + TILE / 2;
+    const cx = this.fx + t.x + TILE / 2, cy = this.fy + t.y + TILE / 2;
 
     // spawn shimmer
     if (t.appearMs > 0) {
@@ -299,7 +330,7 @@ export class Renderer {
     ctx.save();
     ctx.shadowColor = '#fff2a0'; ctx.shadowBlur = 8;
     for (const b of state.bullets) {
-      const x = FX + b.x + 2, y = FY + b.y + 2;
+      const x = this.fx + b.x + 2, y = this.fy + b.y + 2;
       ctx.fillStyle = b.side === 'player' ? '#fff6c8' : '#ff9a6a';
       ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
     }
@@ -310,7 +341,7 @@ export class Renderer {
     const ctx = this.ctx;
     const pulse = Math.sin(this.time * 0.006) * 0.5 + 0.5;
     for (const p of state.powerups) {
-      const x = FX + p.x + TILE / 2, y = FY + p.y + TILE / 2;
+      const x = this.fx + p.x + TILE / 2, y = this.fy + p.y + TILE / 2;
       ctx.save();
       ctx.translate(x, y);
       ctx.shadowColor = POWERUP_COLOR[p.kind]; ctx.shadowBlur = 6 + pulse * 8;
@@ -370,21 +401,25 @@ export class Renderer {
   }
 
   private drawHud(state: GameState): void {
+    if (this.portrait) this.drawHudPortrait(state);
+    else this.drawHudLandscape(state);
+  }
+
+  private drawHudLandscape(state: GameState): void {
     const ctx = this.ctx;
-    const hx = FX + FIELD + PAD;
+    const hx = this.fx + FIELD + PAD;
     ctx.fillStyle = '#0a0c12';
-    ctx.fillRect(hx, FY, HUD_W, FIELD);
+    ctx.fillRect(hx, this.fy, HUD_W, FIELD);
 
     // remaining enemies as little markers
     ctx.fillStyle = '#9aa6b2';
     const remaining = state.enemiesRemaining;
     for (let i = 0; i < remaining; i++) {
       const col = i % 2, row = Math.floor(i / 2);
-      ctx.fillRect(hx + 6 + col * 9, FY + 6 + row * 8, 6, 6);
+      ctx.fillRect(hx + 6 + col * 9, this.fy + 6 + row * 8, 6, 6);
     }
 
-    let ty = FY + 96;
-    ctx.fillStyle = '#7fdcff';
+    let ty = this.fy + 96;
     ctx.font = '700 7px system-ui';
     ctx.textBaseline = 'top';
     const line = (label: string, val: string) => {
@@ -402,14 +437,50 @@ export class Renderer {
     line('STAR', String(state.tanks.find((t) => t.side === 'player')?.starLevel ?? 0));
   }
 
+  private drawHudPortrait(state: GameState): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = '#0a0c12';
+    ctx.fillRect(0, 0, this.dw, HUD_STRIP);
+
+    // enemy dots: 2 rows × 10 cols (up to 20 enemies)
+    ctx.fillStyle = '#9aa6b2';
+    const remaining = state.enemiesRemaining;
+    for (let i = 0; i < Math.min(remaining, 20); i++) {
+      const col = i % 10, row = Math.floor(i / 10);
+      ctx.fillRect(6 + col * 7, 6 + row * 9, 5, 5);
+    }
+
+    // stats right-aligned: STAGE · LIVES · SCORE · STAR
+    const player = state.tanks.find(t => t.side === 'player');
+    const stats = [
+      { label: 'STG', val: String(state.stageIndex + 1) },
+      { label: 'LVS', val: String(Math.max(0, state.lives)) },
+      { label: 'SCR', val: String(state.score) },
+      { label: '★', val: String(player?.starLevel ?? 0) },
+    ];
+    ctx.textBaseline = 'top';
+    let tx = this.dw - 6;
+    for (let i = stats.length - 1; i >= 0; i--) {
+      ctx.textAlign = 'right';
+      ctx.font = '700 9px system-ui';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(stats[i].val, tx, 16);
+      ctx.font = '700 6px system-ui';
+      ctx.fillStyle = 'rgba(160,180,210,0.7)';
+      ctx.fillText(stats[i].label, tx, 7);
+      tx -= 34;
+    }
+    ctx.textAlign = 'left';
+  }
+
   // --- menu / overlay screens --------------------------------------------
 
   private menuBg(): void {
     const ctx = this.ctx;
     ctx.fillStyle = '#05060a';
-    ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    ctx.fillRect(0, 0, this.dw, this.dh);
     ctx.fillStyle = 'rgba(40,90,140,0.05)';
-    for (let i = 0; i < DESIGN_H; i += 4) ctx.fillRect(0, i, DESIGN_W, 1);
+    for (let i = 0; i < this.dh; i += 4) ctx.fillRect(0, i, this.dw, 1);
   }
 
   private centerText(text: string, y: number, size: number, color: string, glow = 0): void {
@@ -420,7 +491,7 @@ export class Renderer {
     ctx.font = `700 ${size}px system-ui`;
     if (glow) { ctx.shadowColor = color; ctx.shadowBlur = glow; }
     ctx.fillStyle = color;
-    ctx.fillText(text, DESIGN_W / 2, y);
+    ctx.fillText(text, this.dw / 2, y);
     ctx.restore();
   }
 
@@ -443,22 +514,25 @@ export class Renderer {
       if (on) this.centerText(o.hint, y + 11, 6, 'rgba(150,170,200,0.7)', 0);
     });
 
-    if (blink) this.centerText('↑ ↓ choose      SPACE / TAP  start', DESIGN_H - 12, 6.5, '#fff', 0);
+    if (blink) this.centerText('↑ ↓ choose      SPACE / TAP  start', this.dh - 12, 6.5, '#fff', 0);
   }
 
   drawPauseOverlay(): void {
     const ctx = this.ctx;
     ctx.save();
     ctx.fillStyle = 'rgba(5,6,10,0.72)';
-    ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    ctx.fillRect(0, 0, this.dw, this.dh);
     ctx.restore();
-    this.centerText('PAUSED', DESIGN_H / 2 - 10, 20, '#fff', 10);
-    this.centerText('ESC / P  resume       Q  quit', DESIGN_H / 2 + 16, 7, 'rgba(180,200,230,0.85)', 0);
+    this.centerText('PAUSED', this.dh / 2 - 10, 20, '#fff', 10);
+    const hint = this.portrait
+      ? 'II  resume           QUIT  exit'
+      : 'ESC / P  resume       Q  quit';
+    this.centerText(hint, this.dh / 2 + 16, 7, 'rgba(180,200,230,0.85)', 0);
   }
 
   drawSplash(stageNum: number): void {
     this.menuBg();
-    this.centerText(`STAGE  ${stageNum}`, DESIGN_H / 2, 22, '#fff', 10);
+    this.centerText(`STAGE  ${stageNum}`, this.dh / 2, 22, '#fff', 10);
   }
 
   drawTally(state: GameState, cleared: boolean): void {
@@ -475,12 +549,12 @@ export class Renderer {
       ctx.fillText(k, 60, y);
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'right';
-      ctx.fillText(`${n} × ${ENEMY_SCORE[k]} = ${n * ENEMY_SCORE[k]}`, DESIGN_W - 60, y);
+      ctx.fillText(`${n} × ${ENEMY_SCORE[k]} = ${n * ENEMY_SCORE[k]}`, this.dw - 60, y);
       ctx.textAlign = 'left';
       y += 18;
     }
     this.centerText(`SCORE   ${state.score}`, y + 14, 12, '#ffd54a', 6);
-    this.centerText(cleared ? 'GET READY…' : 'PRESS  SPACE  /  TAP', DESIGN_H - 18, 8, '#fff', 0);
+    this.centerText(cleared ? 'GET READY…' : 'PRESS  SPACE  /  TAP', this.dh - 18, 8, '#fff', 0);
   }
 
   // --- helpers ------------------------------------------------------------
@@ -510,4 +584,3 @@ const POWERUP_COLOR: Record<PowerUpKind, string> = {
   grenade: '#ff7a5a', shovel: '#9ad36b', tank: '#7affc0',
 };
 
-export { DESIGN_W, DESIGN_H };

@@ -19,6 +19,7 @@ app.appendChild(canvas);
 const renderer = new Renderer(canvas);
 const input = new InputManager(canvas);
 const audio = new AudioManager();
+input.audioUnlock = () => audio.unlock();
 
 type Difficulty = 'easy' | 'hard';
 const START_LIVES = 3;
@@ -70,9 +71,9 @@ function frame(now: number): void {
       break;
 
     case 'playing': {
-      if (input.takePause()) paused = !paused;
+      if (input.takePause()) { paused = !paused; input.showQuitHint(paused); }
       if (paused) {
-        if (input.takeQuit()) { paused = false; mode = 'title'; state = newGame(seed()); break; }
+        if (input.takeQuit()) { paused = false; input.showQuitHint(false); mode = 'title'; state = newGame(seed()); break; }
         renderer.draw(state, 0); // frozen frame
         renderer.drawPauseOverlay();
         break;
